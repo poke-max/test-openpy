@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, flash, redirect, url_for, send_file, make_response
-import openpyxl
+import pandas as pd
 import os
 from datetime import datetime
 from io import BytesIO
@@ -23,32 +23,37 @@ def index():
                 flash('El archivo Excel no se encuentra en la ubicación especificada', 'error')
                 return redirect(url_for('index'))
 
-            # Load the workbook
-            wb = openpyxl.load_workbook(EXCEL_FILE)
+            # Read the Excel file
+            excel_file = pd.ExcelFile(EXCEL_FILE)
             
             # Check if sheet exists
-            if sheet_name not in wb.sheetnames:
+            if sheet_name not in excel_file.sheet_names:
                 flash('¡Hoja no encontrada!', 'error')
                 return redirect(url_for('index'))
 
-            # Get the sheet
-            sheet = wb[sheet_name]
+            # Read the specific sheet
+            df = pd.read_excel(excel_file, sheet_name=sheet_name)
             
-            # Update the cell
-            sheet[cell] = new_value
+            # Parse cell reference (e.g., 'A1' to row and column)
+            col = ''.join(filter(str.isalpha, cell))
+            row = int(''.join(filter(str.isdigit, cell))) - 1  # Convert to 0-based index
+            
+            # Update the cell value
+            df.iloc[row, pd.Index(df.columns).get_loc(col)] = new_value
             
             # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f'PLANILLA_actualizada_{timestamp}.xlsx'
             
             # Save to memory buffer
-            excel_file = BytesIO()
-            wb.save(excel_file)
-            excel_file.seek(0)
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+            output.seek(0)
             
             # Create response with cache headers
             response = make_response(send_file(
-                excel_file,
+                output,
                 as_attachment=True,
                 download_name=filename,
                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
